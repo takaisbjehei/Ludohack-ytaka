@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ludo King Local</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow: auto; /* Allow scrolling if content overflows */
+        }
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+            padding: 20px;
+            max-width: 95%; /* Adjust max-width for mobile */
+            width: 700px; /* Base width */
+            gap: 20px;
+        }
+        canvas {
+            display: block;
+            background-color: #f8f8f8;
+            border: 2px solid #333;
+            border-radius: 10px;
+            touch-action: none; /* Prevent browser touch actions */
+            max-width: 100%; /* Make canvas responsive */
+            height: auto; /* Maintain aspect ratio */
+        }
+        .game-info {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .dice-display {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #333;
+            min-width: 80px;
+            height: 80px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 3px solid #6366F1; /* Indigo-500 */
+            border-radius: 10px;
+            background-color: #EEF2FF; /* Indigo-50 */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .player-turn {
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-align: center;
+            padding: 8px 15px;
+            border-radius: 8px;
+            color: white;
+            transition: background-color 0.3s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .session-id-display {
+            font-size: 0.9rem;
+            color: #6B7280; /* Gray-500 */
+            background-color: #F3F4F6; /* Gray-100 */
+            padding: 8px 12px;
+            border-radius: 8px;
+            word-break: break-all;
+            text-align: center;
+            user-select: all; /* Allow easy selection/copy */
+            cursor: pointer;
+        }
+
+        /* Responsive adjustments for smaller screens */
+        @media (max-width: 640px) {
+            .game-container {
+                padding: 15px;
+                gap: 15px;
+            }
+            .dice-display {
+                font-size: 2.5rem;
+                min-width: 70px;
+                height: 70px;
+            }
+            .player-turn {
+                font-size: 1.2rem;
+            }
+        }
+    </style>
+    <!-- Supabase Client Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="game-container">
+        <h1 class="text-3xl font-bold text-gray-800 mb-4">Ludo King Local</h1>
+        <p class="text-md text-gray-700">Players: 2-4 (Same Device)</p>
+        <p class="text-md font-semibold text-indigo-700 mt-2">
+            Game Session ID (Copy this for control.html):
+        </p>
+        <div id="gameSessionIdDisplay" class="session-id-display">Generating...</div>
+        <canvas id="ludoCanvas"></canvas>
+        <div class="game-info">
+            <div id="playerTurn" class="player-turn bg-red-500">Red's Turn</div>
+            <div class="flex items-center gap-4 mt-2">
+                <span class="text-xl font-semibold text-gray-700">Last Roll:</span>
+                <div id="diceDisplay" class="dice-display">0</div>
+            </div>
+            <div id="gameMessage" class="text-lg text-red-600 font-semibold mt-2"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Supabase Configuration
+        // Replace with your actual Supabase URL and Anon Key
+        const SUPABASE_URL = 'https://vmronlbzksuiikspvlvz.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtcm9ubGJ6a3N1aWlrc3B2bHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk5ODMwNTcsImV4cCI6MjA2NTU1OTA1N30.WMKbpJn1aavkwQDmsYq_-4EMSLL7tc4LexpmRSCsmSM';
+        const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let gameSessionId = localStorage.getItem('ludoGameSessionId'); // Persist session ID
+
+        const canvas = document.getElementById('ludoCanvas');
+        const ctx = canvas.getContext('2d');
+        const diceDisplay = document.getElementById('diceDisplay');
+        const playerTurnDisplay = document.getElementById('playerTurn');
+        const gameMessageDisplay = document.getElementById('gameMessage');
+        const gameSessionIdDisplay = document.getElementById('gameSessionIdDisplay');
+
+        const boardSize = 15; // 15x15 grid
+        let cellSize; // Will be calculated based on canvas width
+
+        // Player colors and their corresponding Tailwind classes
+        const playerColors = {
+            RED: { base: '#EF4444', light: '#FEE2E2', text: 'text-red-500' }, // red-500, red-100
+            GREEN: { base: '#22C55E', light: '#DCFCE7', text: 'text-green-500' }, // green-500, green-100
+            YELLOW: { base: '#EAB308', light: '#FEF9C3', text: 'text-yellow-500' }, // yellow-500, yellow-100
+            BLUE: { base: '#3B82F6', light: '#EFF6FF', text: 'text-blue-500' }  // blue-500, blue-100
+        };
+
+        const players = ['RED', 'GREEN', 'YELLOW', 'BLUE']; // Assuming 4 players for now
+        let currentPlayerIndex = 0;
+        let currentDiceRoll = 0;
+        let gameMessage = "";
+
+        // Piece structure: { id: string, color: string, currentPosition: number, isHome: boolean, inStartArea: boolean }
+        // currentPosition: index on the path (-1 for start area, -2 for finished home, 0-51 for main path, 52-56 for home path)
+        let pieces = [];
+
+        // Define the board path coordinates (x, y) relative to the top-left of the canvas
+        const pathCoordinates = [
+            [6, 14], [6, 13], [6, 12], [6, 11], [6, 10], // Red's initial path (0-4)
+            [5, 9], [4, 9], [3, 9], [2, 9], [1, 9], [0, 9], // Path towards green side (5-10)
+            [0, 8], [0, 7], [0, 6], // Corner (11-13) (Green start is 13)
+            [1, 6], [2, 6], [3, 6], [4, 6], [5, 6], // Green's initial path (14-18)
+            [6, 5], [6, 4], [6, 3], [6, 2], [6, 1], [6, 0], // Path towards yellow side (19-24)
+            [7, 0], [8, 0], [8, 1], [8, 2], [8, 3], [8, 4], // Corner (25-30) (Yellow start is 26)
+            [9, 5], [9, 6], [10, 6], [11, 6], [12, 6], [13, 6], [14, 6], // Yellow's initial path (31-37)
+            [14, 7], [14, 8], [13, 8], [12, 8], [11, 8], [10, 8], [9, 8], // Path towards blue side (38-44)
+            [8, 9], [8, 10], [8, 11], [8, 12], [8, 13], [8, 14], // Corner (45-50) (Blue start is 39)
+            [7, 14] // Final main path cell before Red's home lane (51)
+        ];
+
+        // Specific home path coordinates for each player (5 cells, indexed 0-4)
+        const homePathCoordinates = {
+            RED:    [[7, 13], [7, 12], [7, 11], [7, 10], [7, 9]], // Global indices 52-56
+            GREEN:  [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]], // Global indices 52-56 (for green's path)
+            YELLOW: [[7, 1], [7, 2], [7, 3], [7, 4], [7, 5]], // Global indices 52-56 (for yellow's path)
+            BLUE:   [[13, 7], [12, 7], [11, 7], [10, 7], [9, 7]]  // Global indices 52-56 (for blue's path)
+        };
+
+        // Start positions for each player's first piece on the main path (index in pathCoordinates)
+        const playerStartPathIndex = {
+            RED: 0,
+            GREEN: 13,
+            YELLOW: 26,
+            BLUE: 39
+        };
+
+        // The index on the main path where a player would enter their home lane.
+        // This is the cell *just before* the home path begins.
+        const playerHomeEntryPathIndex = {
+            RED: 51, // From path index 51, next step enters Red's home lane
+            GREEN: 12, // From path index 12, next step enters Green's home lane
+            YELLOW: 25, // From path index 25, next step enters Yellow's home lane
+            BLUE: 38 // From path index 38, next step enters Blue's home lane
+        };
+
+        // Safe spots (indices on the `pathCoordinates` array) - star marked cells + start cells
+        const safeSpots = [
+            playerStartPathIndex.RED, // Red's start
+            playerStartPathIndex.GREEN, // Green's start
+            playerStartPathIndex.YELLOW, // Yellow's start
+            playerStartPathIndex.BLUE, // Blue's start
+            8, 21, 34, 47 // Star cells
+        ];
+
+        // Player starting zones (grid coordinates for 4 pieces)
+        const startZones = {
+            RED: [[1, 13], [1, 12], [2, 13], [2, 12]],
+            GREEN: [[1, 1], [1, 2], [2, 1], [2, 2]],
+            YELLOW: [[12, 1], [12, 2], [13, 1], [13, 2]],
+            BLUE: [[12, 13], [12, 12], [13, 13], [13, 12]]
+        };
+
+        function initPieces() {
+            pieces = [];
+            players.forEach(color => {
+                for (let i = 0; i < 4; i++) {
+                    pieces.push({
+                        id: `${color}-piece-${i}`,
+                        color: color,
+                        currentPosition: -1, // -1 means in start area
+                        isHome: false,
+                        inStartArea: true,
+                        startAreaIndex: i // To position them correctly in the start zone
+                    });
+                }
+            });
+        }
+
+        function resizeCanvas() {
+            const containerWidth = canvas.parentElement.offsetWidth;
+            const newSize = Math.min(containerWidth, 600); // Max 600px, but responsive
+            canvas.width = newSize;
+            canvas.height = newSize;
+            cellSize = canvas.width / boardSize;
+            drawBoard();
+            drawPieces();
+        }
+
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background grid
+            ctx.strokeStyle = '#D1D5DB'; // Gray-300
+            ctx.lineWidth = 1;
+            for (let i = 0; i < boardSize; i++) {
+                for (let j = 0; j < boardSize; j++) {
+                    ctx.strokeRect(i * cellSize, j * cellSize, cellSize, cellSize);
+                }
+            }
+
+            // Draw main board areas (Red, Green, Yellow, Blue squares)
+            ctx.fillStyle = playerColors.RED.light; ctx.fillRect(9 * cellSize, 9 * cellSize, 6 * cellSize, 6 * cellSize);
+            ctx.fillStyle = playerColors.GREEN.light; ctx.fillRect(0 * cellSize, 0 * cellSize, 6 * cellSize, 6 * cellSize);
+            ctx.fillStyle = playerColors.YELLOW.light; ctx.fillRect(9 * cellSize, 0 * cellSize, 6 * cellSize, 6 * cellSize);
+            ctx.fillStyle = playerColors.BLUE.light; ctx.fillRect(0 * cellSize, 9 * cellSize, 6 * cellSize, 6 * cellSize);
+
+            // Draw central home square
+            ctx.fillStyle = '#C0C0C0'; // Silver/Gray for the center
+            ctx.fillRect(6 * cellSize, 6 * cellSize, 3 * cellSize, 3 * cellSize);
+
+            // Draw triangles for each player's home entry pointing to center
+            // Red Home Triangle (bottom-center)
+            ctx.fillStyle = playerColors.RED.base;
+            ctx.beginPath();
+            ctx.moveTo(7.5 * cellSize, 7.5 * cellSize);
+            ctx.lineTo(6 * cellSize, 9 * cellSize);
+            ctx.lineTo(9 * cellSize, 9 * cellSize);
+            ctx.closePath();
+            ctx.fill();
+
+            // Green Home Triangle (left-center)
+            ctx.fillStyle = playerColors.GREEN.base;
+            ctx.beginPath();
+            ctx.moveTo(7.5 * cellSize, 7.5 * cellSize);
+            ctx.lineTo(6 * cellSize, 6 * cellSize);
+            ctx.lineTo(6 * cellSize, 9 * cellSize);
+            ctx.closePath();
+            ctx.fill();
+
+            // Yellow Home Triangle (top-center)
+            ctx.fillStyle = playerColors.YELLOW.base;
+            ctx.beginPath();
+            ctx.moveTo(7.5 * cellSize, 7.5 * cellSize);
+            ctx.lineTo(6 * cellSize, 6 * cellSize);
+            ctx.lineTo(9 * cellSize, 6 * cellSize);
+            ctx.closePath();
+            ctx.fill();
+
+            // Blue Home Triangle (right-center)
+            ctx.fillStyle = playerColors.BLUE.base;
+            ctx.beginPath();
+            ctx.moveTo(7.5 * cellSize, 7.5 * cellSize);
+            ctx.lineTo(9 * cellSize, 6 * cellSize);
+            ctx.lineTo(9 * cellSize, 9 * cellSize);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw main path cells and highlight safe spots
+            pathCoordinates.forEach((coord, index) => {
+                const [gridX, gridY] = coord;
+                ctx.strokeStyle = '#333'; // Darker border for path cells
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(gridX * cellSize, gridY * cellSize, cellSize, cellSize);
+
+                // Highlight safe spots with a star
+                if (safeSpots.includes(index)) {
+                    ctx.fillStyle = '#6366F1'; // Indigo-500 for safe spots
+                    drawStar(ctx, gridX * cellSize + cellSize / 2, gridY * cellSize + cellSize / 2, cellSize * 0.3);
+                }
+            });
+
+            // Draw home paths
+            for (const color in homePathCoordinates) {
+                homePathCoordinates[color].forEach((coord) => {
+                    const [gridX, gridY] = coord;
+                    ctx.fillStyle = playerColors[color].base;
+                    ctx.fillRect(gridX * cellSize, gridY * cellSize, cellSize, cellSize);
+                    ctx.strokeStyle = '#333';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(gridX * cellSize, gridY * cellSize, cellSize, cellSize);
+                });
+            }
+
+            // Draw start areas with their specific colors and borders
+            for (const color in startZones) {
+                ctx.fillStyle = playerColors[color].base;
+                startZones[color].forEach(coord => {
+                    const [gridX, gridY] = coord;
+                    ctx.fillRect(gridX * cellSize, gridY * cellSize, cellSize, cellSize);
+                    ctx.strokeStyle = '#333';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(gridX * cellSize, gridY * cellSize, cellSize, cellSize);
+                });
+            }
+        }
+
+        // Helper function to draw a star
+        function drawStar(ctx, cx, cy, outerRadius) {
+            const spikes = 5;
+            const innerRadius = outerRadius / 2.5; // Adjust for typical star appearance
+            let rot = Math.PI / 2 * 3;
+            let x = cx;
+            let y = cy;
+            const step = Math.PI / spikes;
+
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - outerRadius);
+            for (let i = 0; i < spikes; i++) {
+                x = cx + Math.cos(rot) * outerRadius;
+                y = cy + Math.sin(rot) * outerRadius;
+                ctx.lineTo(x, y);
+                rot += step;
+
+                x = cx + Math.cos(rot) * innerRadius;
+                y = cy + Math.sin(rot) * innerRadius;
+                ctx.lineTo(x, y);
+                rot += step;
+            }
+            ctx.lineTo(cx, cy - outerRadius);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawPieces() {
+            pieces.forEach(piece => {
+                let x, y;
+                if (piece.inStartArea) {
+                    const [gridX, gridY] = startZones[piece.color][piece.startAreaIndex];
+                    x = gridX * cellSize + cellSize / 2;
+                    y = gridY * cellSize + cellSize / 2;
+                } else if (piece.isHome) {
+                    // Position within the central home triangle
+                    x = 7.5 * cellSize; // Center of the board
+                    y = 7.5 * cellSize;
+                    // For multiple pieces in home, slight offsets might be needed
+                } else {
+                    let pathCoord;
+                    if (piece.currentPosition < 52) { // Main path
+                        pathCoord = pathCoordinates[piece.currentPosition];
+                    } else { // Home path
+                        // Convert global path position (52-56) to 0-4 for homePathCoordinates array
+                        const homePathIndex = piece.currentPosition - 52;
+                        pathCoord = homePathCoordinates[piece.color][homePathIndex];
+                    }
+                    x = pathCoord[0] * cellSize + cellSize / 2;
+                    y = pathCoord[1] * cellSize + cellSize / 2;
+                }
+
+                ctx.beginPath();
+                ctx.arc(x, y, cellSize * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = playerColors[piece.color].base;
+                ctx.fill();
+                ctx.strokeStyle = '#fff'; // White border for pieces
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.closePath();
+            });
+        }
+
+        function updatePlayerTurnDisplay() {
+            const currentPlayerColor = players[currentPlayerIndex];
+            playerTurnDisplay.textContent = `${currentPlayerColor}'s Turn`;
+            // Dynamically set background color class based on player color
+            playerTurnDisplay.className = `player-turn ${
+                currentPlayerColor === 'RED' ? 'bg-red-500' :
+                currentPlayerColor === 'GREEN' ? 'bg-green-500' :
+                currentPlayerColor === 'YELLOW' ? 'bg-yellow-500' :
+                currentPlayerColor === 'BLUE' ? 'bg-blue-500' : ''
+            }`;
+        }
+
+        function setGameMessage(message, type = 'info') {
+            gameMessageDisplay.textContent = message;
+            if (type === 'error') {
+                gameMessageDisplay.className = 'text-lg text-red-600 font-semibold mt-2';
+            } else if (type === 'success') {
+                gameMessageDisplay.className = 'text-lg text-green-600 font-semibold mt-2';
+            } else if (type === 'warning') {
+                 gameMessageDisplay.className = 'text-lg text-yellow-600 font-semibold mt-2';
+            } else {
+                gameMessageDisplay.className = 'text-lg text-gray-700 font-semibold mt-2';
+            }
+        }
+
+
+        // Game Logic Functions
+
+        async function handleDiceRoll(rollValue) {
+            currentDiceRoll = rollValue;
+            diceDisplay.textContent = rollValue;
+            setGameMessage(''); // Clear previous message
+
+            const currentPlayer = players[currentPlayerIndex];
+            const movablePieces = pieces.filter(p => p.color === currentPlayer && !p.isHome); // Pieces not yet home
+
+            let canMoveAnyPiece = false;
+            let eligiblePiecesForRoll = [];
+
+            // Determine which pieces are eligible to move
+            for (const piece of movablePieces) {
+                if (piece.inStartArea) {
+                    if (rollValue === 6) {
+                        eligiblePiecesForRoll.push(piece);
+                        canMoveAnyPiece = true;
+                    }
+                } else {
+                    const pieceStartPathIdx = playerStartPathIndex[piece.color];
+                    const pieceHomeEntryPathIdx = playerHomeEntryPathIndex[piece.color];
+                    const totalPathLength = 56; // 52 main path + 5 home path = 57 cells in total (0-56)
+
+                    // Calculate effective position for movement checks
+                    let effectiveCurrentPos = piece.currentPosition;
+                    if (piece.currentPosition < pieceStartPathIdx) {
+                         // This piece has wrapped around the board relative to its starting point.
+                         // For calculating entry into home lane, we need its position relative to its start.
+                         effectiveCurrentPos = piece.currentPosition + (52 - pieceStartPathIdx);
+                    } else if (piece.currentPosition >= pieceStartPathIdx && piece.currentPosition < 52) {
+                         effectiveCurrentPos = piece.currentPosition - pieceStartPathIdx;
+                    } else { // Already in home path (52-56)
+                         effectiveCurrentPos = 52 + (piece.currentPosition - 52); // Keep it global for now
+                    }
+
+                    const potentialNewPosition = piece.currentPosition + rollValue;
+
+                    // Check if moving into home lane from main path
+                    if (piece.currentPosition <= pieceHomeEntryPathIdx && potentialNewPosition > pieceHomeEntryPathIdx) {
+                        const stepsIntoHomeLane = potentialNewPosition - pieceHomeEntryPathIdx;
+                        if (stepsIntoHomeLane >=1 && stepsIntoHomeLane <= 5) { // Can enter home lane and not overshoot
+                            eligiblePiecesForRoll.push(piece);
+                            canMoveAnyPiece = true;
+                        }
+                    }
+                    // Check if already in home lane and moving within it
+                    else if (piece.currentPosition >= 52 && piece.currentPosition <= 56) {
+                        if (potentialNewPosition <= 56) { // Can move within home lane and not overshoot
+                            eligiblePiecesForRoll.push(piece);
+                            canMoveAnyPiece = true;
+                        }
+                    }
+                    // Check if moving on main path
+                    else if (potentialNewPosition < 52) { // Still on main path
+                        eligiblePiecesForRoll.push(piece);
+                        canMoveAnyPiece = true;
+                    }
+                }
+            }
+
+
+            if (!canMoveAnyPiece) {
+                setGameMessage(`No pieces can move for ${currentPlayer} with a roll of ${rollValue}.`, 'error');
+                if (rollValue !== 6) {
+                    nextPlayerTurn();
+                } else {
+                    setGameMessage(`${currentPlayer} rolled a 6 but has no valid moves. Roll again!`);
+                }
+                 // Mark the roll as consumed
+                await supabase.from('dice_rolls')
+                    .update({ is_new_roll: false })
+                    .eq('game_session_id', gameSessionId);
+                return;
+            }
+
+            // For a local game, if multiple pieces can move, a real Ludo would wait for a click.
+            // For simplicity here, we'll implement a basic auto-selection:
+            // 1. Prioritize moving a piece out of start area if roll is 6.
+            // 2. Otherwise, pick the first eligible piece that can move.
+
+            let pieceToMove = null;
+            if (rollValue === 6) {
+                pieceToMove = eligiblePiecesForRoll.find(p => p.inStartArea);
+            }
+            if (!pieceToMove && eligiblePiecesForRoll.length > 0) {
+                pieceToMove = eligiblePiecesForRoll[0]; // Fallback to any eligible piece
+            }
+
+            if (pieceToMove) {
+                movePiece(pieceToMove, rollValue);
+            } else {
+                 // This should ideally not be reached if canMoveAnyPiece is true,
+                 // but as a safeguard.
+                setGameMessage(`Error: Could not find an eligible piece to move for ${currentPlayer}.`, 'error');
+            }
+
+            // If a 6 was rolled and a piece moved, player gets another turn.
+            // If a 6 was rolled and no piece could move (handled above), player also rolls again.
+            // Only advance turn if not a 6 and a move was made (or no move could be made).
+            if (rollValue !== 6) {
+                nextPlayerTurn();
+            } else {
+                setGameMessage(`${currentPlayer} rolled a 6! Roll again.`);
+            }
+
+            drawBoard();
+            drawPieces();
+
+            // Mark the roll as consumed after processing
+            await supabase.from('dice_rolls')
+                .update({ is_new_roll: false })
+                .eq('game_session_id', gameSessionId);
+        }
+
+        async function movePiece(piece, steps) {
+            const currentPlayer = players[currentPlayerIndex];
+
+            if (piece.inStartArea) {
+                if (steps === 6) {
+                    piece.inStartArea = false;
+                    piece.currentPosition = playerStartPathIndex[piece.color];
+                    setGameMessage(`${piece.color} piece moved out of start area!`, 'success');
+                } else {
+                    // This scenario should be prevented by handleDiceRoll logic (not allowing invalid moves)
+                    setGameMessage(`${piece.color} piece needs a 6 to move out of the start area.`, 'error');
+                    return;
+                }
+            } else {
+                const homeEntryIdx = playerHomeEntryPathIndex[piece.color];
+                const newPositionCandidate = piece.currentPosition + steps;
+                let finalPosition = newPositionCandidate;
+
+                // Check if entering home lane
+                if (piece.currentPosition <= homeEntryIdx && newPositionCandidate > homeEntryIdx) {
+                    const stepsIntoHomeLane = newPositionCandidate - homeEntryIdx;
+                    if (stepsIntoHomeLane >= 1 && stepsIntoHomeLane <= 5) {
+                        finalPosition = 51 + stepsIntoHomeLane; // Global position 52-56 for home lane
+                    } else {
+                        setGameMessage(`${piece.color} piece overshot home! Stay put.`, 'error');
+                        return; // Overshot home, do not move
+                    }
+                }
+                // Check if already in home lane and moving within it
+                else if (piece.currentPosition >= 52 && piece.currentPosition <= 56) {
+                    if (newPositionCandidate > 56) {
+                        setGameMessage(`${piece.color} piece overshot home! Stay put.`, 'error');
+                        return; // Overshot home, do not move
+                    }
+                    finalPosition = newPositionCandidate;
+                }
+                // Check if moving on main path
+                else if (newPositionCandidate > 51) {
+                    setGameMessage(`${piece.color} piece overshot the main path.`, 'error');
+                    return; // Overshot main path
+                }
+
+                piece.currentPosition = finalPosition;
+                setGameMessage(`${piece.color} piece moved.`, 'info');
+
+                // Check if piece reached home (final cell in home lane, which is global index 56)
+                if (piece.currentPosition === 56 && homePathCoordinates[piece.color][4][0] * cellSize + cellSize / 2 === getPiecePixelPosition(piece).x) {
+                    piece.isHome = true;
+                    piece.currentPosition = -2; // Special value for home
+                    setGameMessage(`${piece.color} piece reached home!`, 'success');
+                    checkWinCondition();
+                } else if (piece.currentPosition >= 52) {
+                     setGameMessage(`${piece.color} piece is in its home lane.`, 'info');
+                }
+            }
+
+            // Check for kills if the piece is not in its home area (start area or final home)
+            if (!piece.inStartArea && !piece.isHome && piece.currentPosition !== -2) {
+                checkCollisionsAndKills(piece);
+            }
+
+            drawBoard();
+            drawPieces();
+        }
+
+
+        function checkCollisionsAndKills(movedPiece) {
+            const currentPosition = movedPiece.currentPosition;
+            if (safeSpots.includes(currentPosition)) {
+                return; // Safe spot, no kills possible
+            }
+
+            pieces.forEach(p => {
+                if (p.color !== movedPiece.color &&
+                    !p.inStartArea && !p.isHome &&
+                    p.currentPosition === currentPosition) {
+                    // Opponent's piece is at the same position and is not in start/home or safe spot
+                    // Send opponent's piece back to their start area
+                    p.inStartArea = true;
+                    p.currentPosition = -1;
+                    setGameMessage(`${movedPiece.color} killed ${p.color}'s piece!`, 'warning');
+                }
+            });
+        }
+
+        function checkWinCondition() {
+            const winningPlayer = players[currentPlayerIndex];
+            const piecesInHome = pieces.filter(p => p.color === winningPlayer && p.isHome);
+            if (piecesInHome.length === 4) {
+                setGameMessage(`${winningPlayer} wins! Game Over.`, 'success');
+                // You might want to remove the game_session_id from localStorage here
+                // to force a new one for a new game.
+                // localStorage.removeItem('ludoGameSessionId');
+                // stop listening for rolls etc.
+            }
+        }
+
+
+        function nextPlayerTurn() {
+            currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+            updatePlayerTurnDisplay();
+            setGameMessage(''); // Clear message for new turn
+        }
+
+        // --- Supabase Realtime Listener for Dice Rolls ---
+        async function setupSupabaseDiceListener() {
+            if (!gameSessionId) {
+                gameSessionId = crypto.randomUUID();
+                localStorage.setItem('ludoGameSessionId', gameSessionId);
+            }
+            gameSessionIdDisplay.textContent = gameSessionId;
+
+            // Initially check if a roll exists for this session ID
+            const { data, error } = await supabase
+                .from('dice_rolls')
+                .select('roll_value, is_new_roll')
+                .eq('game_session_id', gameSessionId)
+                .single();
+
+            if (error && error.code !== 'PGRST116') { // PGRST116 means "no rows found"
+                console.error('Error fetching initial dice roll:', error.message);
+            } else if (data) {
+                // If data exists, update current dice display
+                diceDisplay.textContent = data.roll_value;
+                if (data.is_new_roll) {
+                     setGameMessage("Waiting for player to move or for next roll.");
+                }
+            } else {
+                 setGameMessage("Waiting for first roll from controller device...");
+            }
+
+
+            // Subscribe to changes in the dice_rolls table for this specific game_session_id
+            supabase
+                .channel(`dice_rolls_channel_${gameSessionId}`)
+                .on(
+                    'postgres_changes',
+                    { event: 'UPDATE', schema: 'public', table: 'dice_rolls', filter: `game_session_id=eq.${gameSessionId}` },
+                    async (payload) => {
+                        const newRollData = payload.new;
+                        console.log('Realtime Update:', newRollData);
+
+                        if (newRollData && newRollData.is_new_roll) {
+                            handleDiceRoll(newRollData.roll_value);
+                        }
+                    }
+                )
+                .subscribe();
+
+            console.log(`Subscribed to dice rolls for session: ${gameSessionId}`);
+        }
+
+        // Initialize the game when the window loads
+        window.onload = async function() {
+            initPieces();
+            resizeCanvas(); // Set initial canvas size and draw board/pieces
+            updatePlayerTurnDisplay();
+            await setupSupabaseDiceListener(); // Start listening for dice rolls
+
+            // Add a resize listener for responsiveness
+            window.addEventListener('resize', resizeCanvas);
+
+            gameSessionIdDisplay.addEventListener('click', () => {
+                const text = gameSessionIdDisplay.textContent;
+                navigator.clipboard.writeText(text).then(() => {
+                    setGameMessage('Game Session ID copied to clipboard!', 'info');
+                    setTimeout(() => setGameMessage('', 'info'), 2000); // Clear message after 2 seconds
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                    setGameMessage('Failed to copy ID. Please copy manually.', 'error');
+                });
+            });
+        };
+    </script>
+</body>
+</html>
+
