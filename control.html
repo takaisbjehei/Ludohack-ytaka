@@ -46,7 +46,6 @@
             font-size: 1.2rem;
             width: calc(50% - 7.5px); /* Adjusted for 2 inputs per row */
             text-align: center;
-            transition: border-color 0.3s ease;
         }
         input[type="text"] {
             width: 100%; /* Full width for session ID input */
@@ -170,7 +169,6 @@
 
     <script>
         // Supabase Configuration
-        // Replace with your actual Supabase URL and Anon Key
         const SUPABASE_URL = 'https://vmronlbzksuiikspvlvz.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtcm9ubGJ6a3N1aWlrc3B2bHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk5ODMwNTcsImV4cCI6MjA2NTU1OTA1N30.WMKbpJn1aavkwQDmsYq_-4EMSLL7tc4LexpmRSCsmSM';
         const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -223,9 +221,29 @@
                 localStorage.setItem('ludoControllerLastRoll', rollValue);
             } catch (error) {
                 console.error('Error sending dice roll to Supabase:', error.message);
-                setControllerMessage(`Failed to send roll: ${error.message}`, 'error');
+                setControllerMessage(`Failed to send roll: ${error.message}. Make sure the Game Session ID is correct and Ludo page is open.`, 'error');
             }
         }
+
+        // --- Supabase Anonymous Sign-In ---
+        async function initSupabaseAuth() {
+            try {
+                const { data, error } = await supabase.auth.signInAnonymously();
+                if (error) throw error;
+                console.log("Supabase anonymous user signed in for controller:", data.user.id);
+                setControllerMessage('Connected to Supabase. Enter Game Session ID.', 'info');
+            } catch (error) {
+                console.error("Error signing in anonymously to Supabase for controller:", error.message);
+                setControllerMessage("Failed to connect to Supabase. Check console for errors.", 'error');
+                // Disable controls if auth fails
+                sendRollBtn.disabled = true;
+                randomRollBtn.disabled = true;
+                autoRollBtn.disabled = true;
+                desiredRollInput.disabled = true;
+                gameSessionIdInput.disabled = true;
+            }
+        }
+
 
         sendRollBtn.addEventListener('click', () => {
             const roll = parseInt(desiredRollInput.value, 10);
@@ -262,7 +280,6 @@
 
             setControllerMessage(`Auto-rolling ${desiredRoll}. Switch to ludo.html to see the effect.`, 'info');
 
-            // Continuously send the desired roll
             autoRollInterval = setInterval(() => {
                 sendDiceRoll(desiredRoll);
             }, 1000); // Send every 1 second
@@ -280,7 +297,8 @@
         });
 
         // Initialize display and retrieve last used session ID
-        window.onload = function() {
+        window.onload = async function() {
+            await initSupabaseAuth(); // Authenticate anonymously first
             const lastSessionId = localStorage.getItem('ludoControllerSessionId');
             if (lastSessionId) {
                 gameSessionIdInput.value = lastSessionId;
@@ -289,7 +307,6 @@
             if (lastSentRoll) {
                 sentRollDisplay.textContent = lastSentRoll;
             }
-            setControllerMessage('Enter Game Session ID from Ludo page.');
         };
     </script>
 </body>
