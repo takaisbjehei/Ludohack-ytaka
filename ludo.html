@@ -69,7 +69,7 @@
             border-radius: 8px;
             color: white;
             transition: background-color 0.3s ease-in-out;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 4px rgba[0](0, 0, 0, 0.1);
         }
         .session-id-display {
             font-size: 0.9rem;
@@ -123,9 +123,8 @@
 
     <script type="module">
         // Supabase Configuration
-        // Replace with your actual Supabase URL and Anon Key
         const SUPABASE_URL = 'https://vmronlbzksuiikspvlvz.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtcm9ubGJ6a3N1aWlrc3B2bHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk5ODMwNTcsImV4cCI6MjA2NTU1OTA1N30.WMKbpJn1aavkwQDmsYq_-4EMSLL7tc4LexpmRSCsmSM';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtcm9ubGJ6a3N1aWlrc3B2bHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk5ODMwNTcsImexcdCI6MjA2NTU1OTA1N30.WMKbpJn1aavkwQDmsYq_-4EMSLL7tc4LexpmRSCsmSM';
         const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         let gameSessionId = localStorage.getItem('ludoGameSessionId'); // Persist session ID
@@ -414,15 +413,12 @@
 
         function setGameMessage(message, type = 'info') {
             gameMessageDisplay.textContent = message;
-            if (type === 'error') {
-                gameMessageDisplay.className = 'text-lg text-red-600 font-semibold mt-2';
-            } else if (type === 'success') {
-                gameMessageDisplay.className = 'text-lg text-green-600 font-semibold mt-2';
-            } else if (type === 'warning') {
-                 gameMessageDisplay.className = 'text-lg text-yellow-600 font-semibold mt-2';
-            } else {
-                gameMessageDisplay.className = 'text-lg text-gray-700 font-semibold mt-2';
-            }
+            gameMessageDisplay.className = `text-lg mt-2 ${
+                type === 'error' ? 'text-red-600 font-semibold' :
+                type === 'success' ? 'text-green-600 font-semibold' :
+                type === 'warning' ? 'text-yellow-600 font-semibold' :
+                'text-gray-700 font-semibold'
+            }`;
         }
 
 
@@ -449,23 +445,10 @@
                 } else {
                     const pieceStartPathIdx = playerStartPathIndex[piece.color];
                     const pieceHomeEntryPathIdx = playerHomeEntryPathIndex[piece.color];
-                    const totalPathLength = 56; // 52 main path + 5 home path = 57 cells in total (0-56)
-
-                    // Calculate effective position for movement checks
-                    let effectiveCurrentPos = piece.currentPosition;
-                    if (piece.currentPosition < pieceStartPathIdx) {
-                         // This piece has wrapped around the board relative to its starting point.
-                         // For calculating entry into home lane, we need its position relative to its start.
-                         effectiveCurrentPos = piece.currentPosition + (52 - pieceStartPathIdx);
-                    } else if (piece.currentPosition >= pieceStartPathIdx && piece.currentPosition < 52) {
-                         effectiveCurrentPos = piece.currentPosition - pieceStartPathIdx;
-                    } else { // Already in home path (52-56)
-                         effectiveCurrentPos = 52 + (piece.currentPosition - 52); // Keep it global for now
-                    }
 
                     const potentialNewPosition = piece.currentPosition + rollValue;
 
-                    // Check if moving into home lane from main path
+                    // Check if entering home lane
                     if (piece.currentPosition <= pieceHomeEntryPathIdx && potentialNewPosition > pieceHomeEntryPathIdx) {
                         const stepsIntoHomeLane = potentialNewPosition - pieceHomeEntryPathIdx;
                         if (stepsIntoHomeLane >=1 && stepsIntoHomeLane <= 5) { // Can enter home lane and not overshoot
@@ -480,8 +463,8 @@
                             canMoveAnyPiece = true;
                         }
                     }
-                    // Check if moving on main path
-                    else if (potentialNewPosition < 52) { // Still on main path
+                    // Check if moving on main path and not overshooting or entering home lane
+                    else if (potentialNewPosition <= 51) { // Still on main path
                         eligiblePiecesForRoll.push(piece);
                         canMoveAnyPiece = true;
                     }
@@ -497,36 +480,30 @@
                     setGameMessage(`${currentPlayer} rolled a 6 but has no valid moves. Roll again!`);
                 }
                  // Mark the roll as consumed
-                await supabase.from('dice_rolls')
+                const { error: updateError } = await supabase.from('dice_rolls')
                     .update({ is_new_roll: false })
                     .eq('game_session_id', gameSessionId);
+                if (updateError) console.error("Error setting is_new_roll to false:", updateError);
                 return;
             }
 
-            // For a local game, if multiple pieces can move, a real Ludo would wait for a click.
-            // For simplicity here, we'll implement a basic auto-selection:
-            // 1. Prioritize moving a piece out of start area if roll is 6.
-            // 2. Otherwise, pick the first eligible piece that can move.
-
+            // Auto-select piece logic
             let pieceToMove = null;
             if (rollValue === 6) {
+                // Prioritize moving a piece from the start area if a 6 is rolled
                 pieceToMove = eligiblePiecesForRoll.find(p => p.inStartArea);
             }
             if (!pieceToMove && eligiblePiecesForRoll.length > 0) {
-                pieceToMove = eligiblePiecesForRoll[0]; // Fallback to any eligible piece
+                pieceToMove = eligiblePiecesForRoll[0]; // Fallback to the first eligible piece
             }
 
             if (pieceToMove) {
                 movePiece(pieceToMove, rollValue);
             } else {
-                 // This should ideally not be reached if canMoveAnyPiece is true,
-                 // but as a safeguard.
-                setGameMessage(`Error: Could not find an eligible piece to move for ${currentPlayer}.`, 'error');
+                 setGameMessage(`Error: Could not find an eligible piece to move for ${currentPlayer}.`, 'error');
             }
 
-            // If a 6 was rolled and a piece moved, player gets another turn.
-            // If a 6 was rolled and no piece could move (handled above), player also rolls again.
-            // Only advance turn if not a 6 and a move was made (or no move could be made).
+            // Only advance turn if not a 6, or if a 6 was rolled and no valid moves were found
             if (rollValue !== 6) {
                 nextPlayerTurn();
             } else {
@@ -537,9 +514,10 @@
             drawPieces();
 
             // Mark the roll as consumed after processing
-            await supabase.from('dice_rolls')
+            const { error: updateError } = await supabase.from('dice_rolls')
                 .update({ is_new_roll: false })
                 .eq('game_session_id', gameSessionId);
+            if (updateError) console.error("Error setting is_new_roll to false:", updateError);
         }
 
         async function movePiece(piece, steps) {
@@ -551,7 +529,6 @@
                     piece.currentPosition = playerStartPathIndex[piece.color];
                     setGameMessage(`${piece.color} piece moved out of start area!`, 'success');
                 } else {
-                    // This scenario should be prevented by handleDiceRoll logic (not allowing invalid moves)
                     setGameMessage(`${piece.color} piece needs a 6 to move out of the start area.`, 'error');
                     return;
                 }
@@ -567,32 +544,40 @@
                         finalPosition = 51 + stepsIntoHomeLane; // Global position 52-56 for home lane
                     } else {
                         setGameMessage(`${piece.color} piece overshot home! Stay put.`, 'error');
-                        return; // Overshot home, do not move
+                        return;
                     }
                 }
                 // Check if already in home lane and moving within it
                 else if (piece.currentPosition >= 52 && piece.currentPosition <= 56) {
                     if (newPositionCandidate > 56) {
                         setGameMessage(`${piece.color} piece overshot home! Stay put.`, 'error');
-                        return; // Overshot home, do not move
+                        return;
                     }
                     finalPosition = newPositionCandidate;
                 }
-                // Check if moving on main path
+                // Check if moving on main path and not overshooting
                 else if (newPositionCandidate > 51) {
                     setGameMessage(`${piece.color} piece overshot the main path.`, 'error');
-                    return; // Overshot main path
+                    return;
                 }
 
                 piece.currentPosition = finalPosition;
                 setGameMessage(`${piece.color} piece moved.`, 'info');
 
                 // Check if piece reached home (final cell in home lane, which is global index 56)
-                if (piece.currentPosition === 56 && homePathCoordinates[piece.color][4][0] * cellSize + cellSize / 2 === getPiecePixelPosition(piece).x) {
-                    piece.isHome = true;
-                    piece.currentPosition = -2; // Special value for home
-                    setGameMessage(`${piece.color} piece reached home!`, 'success');
-                    checkWinCondition();
+                // This check is a bit simplified; in a full Ludo game, there might be a specific 'home' state, not just position 56
+                if (piece.currentPosition === 56 && piece.color === players[currentPlayerIndex]) { // Only if current player's piece
+                    const homePathLastCellCoord = homePathCoordinates[piece.color][4]; // Get the coordinates of the last home cell for this color
+                    // Verify if the piece is actually at the coordinate corresponding to the end of its home path
+                    const actualPieceX = pathCoordinates[piece.currentPosition] ? pathCoordinates[piece.currentPosition][0] : homePathCoordinates[piece.color][piece.currentPosition - 52][0];
+                    const actualPieceY = pathCoordinates[piece.currentPosition] ? pathCoordinates[piece.currentPosition][1] : homePathCoordinates[piece.color][piece.currentPosition - 52][1];
+
+                    if (actualPieceX === homePathLastCellCoord[0] && actualPieceY === homePathLastCellCoord[1]) {
+                        piece.isHome = true;
+                        piece.currentPosition = -2; // Special value for home
+                        setGameMessage(`${piece.color} piece reached home!`, 'success');
+                        checkWinCondition();
+                    }
                 } else if (piece.currentPosition >= 52) {
                      setGameMessage(`${piece.color} piece is in its home lane.`, 'info');
                 }
@@ -648,31 +633,50 @@
 
         // --- Supabase Realtime Listener for Dice Rolls ---
         async function setupSupabaseDiceListener() {
+            console.log("Setting up Supabase dice listener...");
+            // Ensure anonymous user is signed in first for RLS
+            try {
+                const { data, error } = await supabase.auth.signInAnonymously();
+                if (error) throw error;
+                console.log("Supabase anonymous user signed in:", data.user.id);
+            } catch (error) {
+                console.error("Error signing in anonymously to Supabase:", error.message);
+                setGameMessage("Failed to connect to dice controller. Check console for errors.", 'error');
+                return; // Stop if auth fails
+            }
+
             if (!gameSessionId) {
                 gameSessionId = crypto.randomUUID();
                 localStorage.setItem('ludoGameSessionId', gameSessionId);
+                console.log("Generated new gameSessionId:", gameSessionId);
+            } else {
+                console.log("Using existing gameSessionId from localStorage:", gameSessionId);
             }
-            gameSessionIdDisplay.textContent = gameSessionId;
+            gameSessionIdDisplay.textContent = gameSessionId; // Display immediately
 
             // Initially check if a roll exists for this session ID
-            const { data, error } = await supabase
-                .from('dice_rolls')
-                .select('roll_value, is_new_roll')
-                .eq('game_session_id', gameSessionId)
-                .single();
+            try {
+                const { data, error } = await supabase
+                    .from('dice_rolls')
+                    .select('roll_value, is_new_roll')
+                    .eq('game_session_id', gameSessionId)
+                    .single();
 
-            if (error && error.code !== 'PGRST116') { // PGRST116 means "no rows found"
-                console.error('Error fetching initial dice roll:', error.message);
-            } else if (data) {
-                // If data exists, update current dice display
-                diceDisplay.textContent = data.roll_value;
-                if (data.is_new_roll) {
-                     setGameMessage("Waiting for player to move or for next roll.");
+                if (error && error.code !== 'PGRST116') { // PGRST116 means "no rows found"
+                    console.error('Error fetching initial dice roll:', error.message);
+                } else if (data) {
+                    diceDisplay.textContent = data.roll_value;
+                    if (data.is_new_roll) {
+                         setGameMessage("Waiting for player to move or for next roll.");
+                    }
+                } else {
+                     setGameMessage("Waiting for first roll from controller device...");
                 }
-            } else {
-                 setGameMessage("Waiting for first roll from controller device...");
+            } catch (error) {
+                console.error('Error during initial Supabase query:', error.message);
+                setGameMessage("Error connecting to dice rolls. Please refresh.", 'error');
+                return;
             }
-
 
             // Subscribe to changes in the dice_rolls table for this specific game_session_id
             supabase
@@ -682,16 +686,23 @@
                     { event: 'UPDATE', schema: 'public', table: 'dice_rolls', filter: `game_session_id=eq.${gameSessionId}` },
                     async (payload) => {
                         const newRollData = payload.new;
-                        console.log('Realtime Update:', newRollData);
+                        console.log('Realtime Update Received:', newRollData);
 
                         if (newRollData && newRollData.is_new_roll) {
                             handleDiceRoll(newRollData.roll_value);
                         }
                     }
                 )
-                .subscribe();
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        console.log(`Successfully subscribed to channel: dice_rolls_channel_${gameSessionId}`);
+                    } else if (status === 'CHANNEL_ERROR') {
+                        console.error(`Error subscribing to channel: dice_rolls_channel_${gameSessionId}`);
+                        setGameMessage("Realtime connection error. Refresh page.", 'error');
+                    }
+                });
 
-            console.log(`Subscribed to dice rolls for session: ${gameSessionId}`);
+            console.log(`Subscription initiated for session: ${gameSessionId}`);
         }
 
         // Initialize the game when the window loads
