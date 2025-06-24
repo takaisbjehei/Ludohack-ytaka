@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ludo Dice Controller</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            gap: 20px;
+        }
+        .container {
+            background-color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+            padding: 30px;
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        .input-group, .button-group {
+            display: flex;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            gap: 15px;
+            justify-content: center;
+            width: 100%;
+        }
+        input[type="number"], input[type="text"] {
+            padding: 12px 15px;
+            border: 2px solid #D1D5DB; /* Gray-300 */
+            border-radius: 8px;
+            font-size: 1.2rem;
+            width: calc(50% - 7.5px); /* Adjusted for 2 inputs per row */
+            text-align: center;
+            transition: border-color 0.3s ease;
+        }
+        input[type="text"] {
+            width: 100%; /* Full width for session ID input */
+            text-align: left;
+        }
+        input:focus {
+            outline: none;
+            border-color: #6366F1; /* Indigo-500 */
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+        button {
+            padding: 12px 25px;
+            border-radius: 10px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            flex-grow: 1; /* Allow buttons to grow */
+            min-width: 120px; /* Minimum width for buttons */
+        }
+        button.primary {
+            background-color: #4F46E5; /* Indigo-600 */
+            color: white;
+            border: none;
+        }
+        button.primary:hover {
+            background-color: #4338CA; /* Indigo-700 */
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        button.secondary {
+            background-color: #6EE7B7; /* Emerald-300 */
+            color: #10B981; /* Emerald-600 */
+            border: 2px solid #10B981;
+        }
+        button.secondary:hover {
+            background-color: #34D399; /* Emerald-500 */
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        button.danger {
+            background-color: #F87171; /* Red-400 */
+            color: white;
+            border: none;
+        }
+        button.danger:hover {
+            background-color: #EF4444; /* Red-500 */
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        .current-roll-display {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #333;
+            min-width: 80px;
+            height: 80px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 3px solid #6366F1; /* Indigo-500 */
+            border-radius: 10px;
+            background-color: #EEF2FF; /* Indigo-50 */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .message {
+            font-size: 1rem;
+            color: #4B5563; /* Gray-600 */
+            text-align: center;
+            min-height: 24px; /* Reserve space */
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 640px) {
+            .container {
+                padding: 20px;
+                gap: 15px;
+            }
+            .input-group, .button-group {
+                flex-direction: column; /* Stack elements vertically on small screens */
+            }
+            button {
+                width: 100%; /* Full width for stacked buttons */
+            }
+            input[type="number"] {
+                width: 100%; /* Full width for number input */
+            }
+        }
+    </style>
+    <!-- Supabase Client Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-gray-800 mb-4">Ludo Dice Controller</h1>
+
+        <div class="input-group">
+            <label for="gameSessionIdInput" class="text-lg font-medium text-gray-700 sr-only">Game Session ID:</label>
+            <input type="text" id="gameSessionIdInput" placeholder="Enter Game Session ID" value="">
+        </div>
+
+        <div class="input-group">
+            <label for="desiredRoll" class="text-lg font-medium text-gray-700 sr-only">Desired Roll:</label>
+            <input type="number" id="desiredRoll" min="1" max="6" value="6" placeholder="Desired Roll">
+            <button id="sendRollBtn" class="primary">Send Roll</button>
+        </div>
+
+        <div class="button-group">
+            <button id="randomRollBtn" class="secondary">Random Roll</button>
+            <button id="autoRollBtn" class="danger">Auto Roll Until Selected</button>
+            <button id="stopAutoRollBtn" class="primary hidden">Stop Auto Roll</button>
+        </div>
+
+        <div class="flex items-center gap-4 mt-4">
+            <span class="text-xl font-semibold text-gray-700">Last Sent Roll:</span>
+            <div id="sentRollDisplay" class="current-roll-display">0</div>
+        </div>
+        <p id="controllerMessage" class="message"></p>
+    </div>
+
+    <script>
+        // Supabase Configuration
+        // Replace with your actual Supabase URL and Anon Key
+        const SUPABASE_URL = 'https://vmronlbzksuiikspvlvz.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtcm9ubGJ6a3N1aWlrc3B2bHZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk5ODMwNTcsImV4cCI6MjA2NTU1OTA1N30.WMKbpJn1aavkwQDmsYq_-4EMSLL7tc4LexpmRSCsmSM';
+        const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const gameSessionIdInput = document.getElementById('gameSessionIdInput');
+        const desiredRollInput = document.getElementById('desiredRoll');
+        const sendRollBtn = document.getElementById('sendRollBtn');
+        const randomRollBtn = document.getElementById('randomRollBtn');
+        const autoRollBtn = document.getElementById('autoRollBtn');
+        const stopAutoRollBtn = document.getElementById('stopAutoRollBtn');
+        const sentRollDisplay = document.getElementById('sentRollDisplay');
+        const controllerMessageDisplay = document.getElementById('controllerMessage');
+
+        let autoRollInterval;
+
+        function setControllerMessage(message, type = 'info') {
+            controllerMessageDisplay.textContent = message;
+            controllerMessageDisplay.className = `message ${
+                type === 'error' ? 'text-red-600' :
+                type === 'success' ? 'text-green-600' :
+                'text-gray-600'
+            }`;
+        }
+
+        async function sendDiceRoll(rollValue) {
+            const gameSessionId = gameSessionIdInput.value.trim();
+            if (!gameSessionId) {
+                setControllerMessage('Please enter a Game Session ID.', 'error');
+                return;
+            }
+
+            try {
+                // Upsert: Try to update first. If row doesn't exist, insert it.
+                const { data, error } = await supabase
+                    .from('dice_rolls')
+                    .upsert({
+                        game_session_id: gameSessionId,
+                        roll_value: rollValue,
+                        is_new_roll: true, // Signal to the game that this is a new roll
+                        rolled_at: new Date().toISOString()
+                    }, { onConflict: 'game_session_id' }) // Specify conflict target for upsert
+                    .select() // Request data back to confirm
+                    .single();
+
+                if (error) throw error;
+
+                sentRollDisplay.textContent = rollValue;
+                setControllerMessage(`Sent dice roll: ${rollValue} for session ${gameSessionId}`, 'success');
+                localStorage.setItem('ludoControllerSessionId', gameSessionId); // Save for next time
+                localStorage.setItem('ludoControllerLastRoll', rollValue);
+            } catch (error) {
+                console.error('Error sending dice roll to Supabase:', error.message);
+                setControllerMessage(`Failed to send roll: ${error.message}`, 'error');
+            }
+        }
+
+        sendRollBtn.addEventListener('click', () => {
+            const roll = parseInt(desiredRollInput.value, 10);
+            if (isNaN(roll) || roll < 1 || roll > 6) {
+                setControllerMessage('Please enter a number between 1 and 6.', 'error');
+                return;
+            }
+            sendDiceRoll(roll);
+        });
+
+        randomRollBtn.addEventListener('click', () => {
+            const randomRoll = Math.floor(Math.random() * 6) + 1;
+            sendDiceRoll(randomRoll);
+        });
+
+        autoRollBtn.addEventListener('click', () => {
+            const desiredRoll = parseInt(desiredRollInput.value, 10);
+            if (isNaN(desiredRoll) || desiredRoll < 1 || desiredRoll > 6) {
+                setControllerMessage('Please enter a number between 1 and 6 for auto-roll.', 'error');
+                return;
+            }
+            const gameSessionId = gameSessionIdInput.value.trim();
+            if (!gameSessionId) {
+                setControllerMessage('Please enter a Game Session ID before auto-rolling.', 'error');
+                return;
+            }
+
+            autoRollBtn.classList.add('hidden');
+            stopAutoRollBtn.classList.remove('hidden');
+            sendRollBtn.disabled = true;
+            randomRollBtn.disabled = true;
+            desiredRollInput.disabled = true;
+            gameSessionIdInput.disabled = true;
+
+            setControllerMessage(`Auto-rolling ${desiredRoll}. Switch to ludo.html to see the effect.`, 'info');
+
+            // Continuously send the desired roll
+            autoRollInterval = setInterval(() => {
+                sendDiceRoll(desiredRoll);
+            }, 1000); // Send every 1 second
+        });
+
+        stopAutoRollBtn.addEventListener('click', () => {
+            clearInterval(autoRollInterval);
+            autoRollBtn.classList.remove('hidden');
+            stopAutoRollBtn.classList.add('hidden');
+            sendRollBtn.disabled = false;
+            randomRollBtn.disabled = false;
+            desiredRollInput.disabled = false;
+            gameSessionIdInput.disabled = false;
+            setControllerMessage("Auto-roll stopped.", 'info');
+        });
+
+        // Initialize display and retrieve last used session ID
+        window.onload = function() {
+            const lastSessionId = localStorage.getItem('ludoControllerSessionId');
+            if (lastSessionId) {
+                gameSessionIdInput.value = lastSessionId;
+            }
+            const lastSentRoll = localStorage.getItem('ludoControllerLastRoll');
+            if (lastSentRoll) {
+                sentRollDisplay.textContent = lastSentRoll;
+            }
+            setControllerMessage('Enter Game Session ID from Ludo page.');
+        };
+    </script>
+</body>
+</html>
+
